@@ -4,7 +4,9 @@ import struct
 import wrapper
 import threading
 import time
+import helpers
 from wrapper import recv_from_any_link, send_to_link, get_switch_mac, get_interface_name
+from helpers import config_switch
 
 BROADCAST = "ff:ff:ff:ff:ff:ff"
 
@@ -56,7 +58,9 @@ def main():
         print(get_interface_name(i))
 
     # Init necessary variables
+    # Mac table, vlan table
     mac_table = dict()
+    vlan_table, _ = config_switch(switch_id, interfaces)
 
     while True:
         # Note that data is of type bytes([...]).
@@ -81,29 +85,129 @@ def main():
         print("Received frame of size {} on interface {}".format(length, interface), flush=True)
 
         # TODO: Implement forwarding with learning
-
         #  Update source MAC in MAC_table
         mac_table[src_mac] = interface
 
-        # Check for forwarding type
-        if dest_mac != BROADCAST:
+        # TODO: Implement VLAN support
+
+        # Forward from access or trunk port, depending on vlan_id
+        # Access
+        if vlan_id == -1:   
+       
             # Unicast
-            # Check for destination MAC within table
-            # If found, send directly; otherwise flood
-            if dest_mac in mac_table:
-                dest_interface = mac_table[dest_mac]
-                send_to_link(dest_interface, length, data)
-            else:
-                for i in interfaces:
-                    if i != interface:
-                        send_to_link(i, length, data)
-        else:
+            if dest_mac != BROADCAST:
+
+                # Destination MAC is known
+                if dest_mac in mac_table:
+
+                    # Calculate VLANs, frame with tag and destination interface
+                    vlan_src = vlan_table[interface]
+                    dest_interface = mac_table[dest_mac]
+                    vlan_dest = vlan_table[dest_interface]
+                    tagged_frame = data[0:12] + create_vlan_tag(int(vlan_src)) + data[12:]
+
+                    # Same VLAN, therefore send; header remains the same
+                    if vlan_src == vlan_dest:
+                        send_to_link(dest_interface, length, data)
+
+                    # Different VLAN (from access to trunk)
+                    # Modify header and send
+                    elif vlan_dest == 'T':
+                        send_to_link(dest_interface, len(tagged_frame), tagged_frame)
+
+                # Destination MAC is unknown
+                else:
+
+                    # Calculate src VLAN and frame with tag only
+                    vlan_src = vlan_table[interface]
+                    tagged_frame = data[0:12] + create_vlan_tag(int(vlan_src)) + data[12:]
+
+                    for i in interfaces:
+                        vlan_dest = vlan_table[i]
+
+                        # For same VLAN (access to access), just send
+                        if i != interface and vlan_src == vlan_dest:
+                            send_to_link(i, length, data)
+
+                        # For trunk port, update frame and send
+                        elif i != interface and vlan_dest == 'T':
+                            send_to_link(i, len(tagged_frame), tagged_frame)
+
             # Broadcast
-            for i in interfaces:
-                    if i != interface:
+            else:
+
+                # Calculate VLANs, frame with tag and destination interface
+                vlan_src = vlan_table[interface]
+                tagged_frame = data[0:12] + create_vlan_tag(int(vlan_src)) + data[12:]
+
+                for i in interfaces:
+                    vlan_dest = vlan_table[i]
+
+                    # For same VLAN (access to access), just send
+                    if i != interface and vlan_src == vlan_dest:
                         send_to_link(i, length, data)
 
-        # TODO: Implement VLAN support
+                    # For trunk port, update frame and send
+                    elif i != interface and vlan_dest == 'T':
+                        send_to_link(i, len(tagged_frame), tagged_frame)
+
+        # Trunk
+        else:
+
+            # Unicast
+            if dest_mac != BROADCAST:
+
+                # Destination MAC is known
+                if dest_mac in mac_table:
+
+                    # Calculate dest VLAN, original frame and destination interface
+                    dest_interface = mac_table[dest_mac]
+                    vlan_dest = vlan_table[dest_interface]
+                    original_frame = data[0:12] + data[16:]
+                    
+                    # Same VLAN (trunk to trunk), therefore send; header remains the same
+                    if vlan_dest == 'T':
+                        send_to_link(dest_interface, length, data)
+
+                    # Different VLAN (from trunk to access)
+                    # Modify header and send
+                    elif int(vlan_dest) == vlan_id:
+                        send_to_link(dest_interface, len(original_frame), original_frame)
+
+                # Destination MAC is unknown
+                else:
+
+                    # Calculate original frame
+                    original_frame = data[0:12] + data[16:]
+
+                    for i in interfaces:
+                        vlan_dest = vlan_table[i]
+
+                        # For same VLAN (trunk to trunk), just send
+                        if i != interface and vlan_dest == 'T':
+                            send_to_link(i, length, data)
+
+                        # For access port, update frame and send
+                        elif i != interface and int(vlan_dest) == vlan_id:
+                            send_to_link(i, len(original_frame), original_frame)
+
+            # Broadcast
+            else:
+
+                # Calculate VLAN and original frame only
+                original_frame = data[0:12] + data[16:]
+
+                for i in interfaces:
+                    vlan_dest = vlan_table[i]
+
+                    # For same VLAN (trunk to trunk), just send
+                    if i != interface and vlan_dest == 'T':
+                        send_to_link(i, length, data)
+
+                    # For access port, update frame and send
+                    elif i != interface and int(vlan_dest) == vlan_id:
+                        send_to_link(i, len(original_frame), original_frame)
+
         # TODO: Implement STP support
 
         # data is of type bytes.
