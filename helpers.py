@@ -87,7 +87,7 @@ def create_vlan_tag(vlan_id):
     # vlan_id & 0x0FFF ensures that only the last 12 bits are used
     return struct.pack('!H', 0x8200) + struct.pack('!H', vlan_id & 0x0FFF)
 
-def handle_bdpu(data, root, interface, trunk_interfaces, src_mac_bytes,
+def handle_bpdu(data, root, interface, trunk_interfaces, src_mac_bytes,
                 own_bridge_ID):
     # Unpack bpdu
     bpdu = unpack_buff(data)

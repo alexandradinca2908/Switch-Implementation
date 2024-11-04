@@ -1,0 +1,35 @@
+1 2 3
+
+Task 1: Forwarding
+For forwarding, the switch simply checks MAC address. If it has the address in its MAC table (hashmap with MAC strings as keys and integer interfaces as values), it sends the frame on that specific interface; otherwise, it broadcasts frame on all ports.
+
+Task 2: VLAN
+VLAN support comes with configuration files; after configuring a switch based on its respective file, we now have a VLAN table (hashmap with interfaces as keys and VLANs as values). The algorithm adapts as such: a frame is received; if destination is known, send on that specific port with the condition that the specified port is on the same VLAN; if destination is unknown, broadcast on all interfaces with trunk VLAN or same access VLAN. Moreover, there are 4 cases for a switch to handle:
+    access to access / trunk to trunk -> frame is sent exactly as received
+    access to trunk -> switch adds VLAN header before sending the frame to another switch, so that the destination knows how to forward the frame next
+    trunk to access -> switch removes VLAN header, because access point can't interpret the VLAN header (and doesn't need to, either)
+
+Task 3: STP
+STP adds to the forwarding process by blocking certain ports to prevent cycles; in the program, a thread that sends a BPDU to all other switches is added, so that the entire network establishes a root and certain non-cyclic paths. At first, all switches consider themselves root. When receiving a BPDU, they either:
+    update their data because of new root (store new root, block all non-root paths, make root path designated) and forward this information to all other trunk ports
+    update their pathing for most optimal path to root
+    update port status depending on received BPDU
+And after establishing this hierarchy, the switch acts as mentioned in VLAN, with the added condition that it only sends data to designated ports
+
+switch.py: main function receives a data frame, unpacks it, then either interprets it (BPDU) or sends it further (normal frame)
+
+helpers.py:
+    BPDU class: contains all fields of a BPDU frame, plus a length function (length is constant) and a pack function, that puts together all fields as an array of bytes
+
+    stp_init: initializes all data as if switch is root
+
+    unpack_buff: converts array of bytes into a BPDU object for easier access
+
+    config_switch: reads data from switch config files and associates interfaces with VLANS + gets switch priority value
+
+    handle_bpdu: analyzes received BPDU frame by following STP steps mentioned above
+
+    send_frame: forwards a frame depending on who it came from (each if branch covers 2/4 VLAN cases)
+
+    fwd_from_access / fwd_from_trunk: each function handles a frame by adding/removing VLAN header or not changing anything at all, following VLAN and Forwarding steps combined
+

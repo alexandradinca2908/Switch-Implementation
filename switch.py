@@ -5,7 +5,7 @@ import wrapper
 import threading
 import time
 from wrapper import recv_from_any_link, send_to_link, get_switch_mac, get_interface_name
-from helpers import stp_init, config_switch, handle_bdpu, send_frame, MULTICAST, BPDU
+from helpers import stp_init, config_switch, handle_bpdu, send_frame, MULTICAST, BPDU
 
 ENABLE_PRINT = False
 
@@ -27,7 +27,7 @@ def parse_ethernet_header(data):
 
     return dest_mac, src_mac, ether_type, vlan_id
 
-def send_bdpu_every_sec(own_bridge_ID, root, vlan_table):
+def send_bpdu_every_sec(own_bridge_ID, root, vlan_table):
     while True:
         # Send BDPU every second if switch is root
         if own_bridge_ID == root[0]:
@@ -66,7 +66,7 @@ def main():
     # ROOT[2] = root_port_ID
 
     # Create and start a new thread that deals with sending BPDU
-    t = threading.Thread(target=send_bdpu_every_sec, args=(own_bridge_ID, root, vlan_table))
+    t = threading.Thread(target=send_bpdu_every_sec, args=(own_bridge_ID, root, vlan_table))
     t.start()
 
     while True:
@@ -94,7 +94,7 @@ def main():
 
         # Check for BPDU
         if dest_mac == MULTICAST:
-            handle_bdpu(data, root, interface, trunk_interfaces,
+            handle_bpdu(data, root, interface, trunk_interfaces,
                         src_mac_bytes, own_bridge_ID)
 
         # Normal frame
